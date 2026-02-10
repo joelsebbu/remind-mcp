@@ -239,6 +239,154 @@ class TestAddDeleteList:
 
 
 # ---------------------------------------------------------------------------
+# RemindManager: update reminder
+# ---------------------------------------------------------------------------
+
+class TestUpdateReminder:
+    def test_update_message_by_line_number(self, manager, tmp_reminders):
+        manager.add_reminder("2026-03-15", "Old message", time="14:30")
+
+        old_line, new_line = manager.update_reminder("1", message="New message")
+        assert "Old message" in old_line
+        assert "New message" in new_line
+        # Date and time should be preserved
+        assert "15 Mar 2026" in new_line
+        assert "AT 14:30" in new_line
+
+        content = Path(tmp_reminders).read_text()
+        assert "New message" in content
+        assert "Old message" not in content
+
+    def test_update_date_by_pattern(self, manager, tmp_reminders):
+        manager.add_reminder("2026-03-15", "Deploy", time="14:30")
+
+        old_line, new_line = manager.update_reminder("deploy", date="2026-04-01")
+        assert "15 Mar 2026" in old_line
+        assert "1 Apr 2026" in new_line
+        # Message and time should be preserved
+        assert "Deploy" in new_line
+        assert "AT 14:30" in new_line
+
+    def test_update_time(self, manager, tmp_reminders):
+        manager.add_reminder("2026-03-15", "Meeting", time="09:00")
+
+        old_line, new_line = manager.update_reminder("1", time="10:30")
+        assert "AT 09:00" in old_line
+        assert "AT 10:30" in new_line
+        assert "Meeting" in new_line
+
+    def test_update_remove_time(self, manager, tmp_reminders):
+        manager.add_reminder("2026-03-15", "Meeting", time="09:00")
+
+        old_line, new_line = manager.update_reminder("1", time="")
+        assert "AT 09:00" in old_line
+        assert "AT" not in new_line
+        assert "Meeting" in new_line
+
+    def test_update_add_advance_notice(self, manager, tmp_reminders):
+        manager.add_reminder("2026-03-15", "Deploy")
+
+        old_line, new_line = manager.update_reminder("1", advance_notice=3)
+        assert "+3" not in old_line
+        assert "+3" in new_line
+        assert "Deploy" in new_line
+
+    def test_update_remove_advance_notice(self, manager, tmp_reminders):
+        manager.add_reminder("2026-03-15", "Deploy", advance_notice=3)
+
+        old_line, new_line = manager.update_reminder("1", advance_notice=0)
+        assert "+3" in old_line
+        assert "+" not in new_line
+
+    def test_update_multiple_fields(self, manager, tmp_reminders):
+        manager.add_reminder("2026-03-15", "Old", time="09:00")
+
+        old_line, new_line = manager.update_reminder(
+            "1", date="2026-06-01", message="New", time="17:00"
+        )
+        assert "1 Jun 2026" in new_line
+        assert "New" in new_line
+        assert "AT 17:00" in new_line
+
+    def test_update_preserves_other_lines(self, manager, tmp_reminders):
+        manager.add_reminder("2026-03-15", "First")
+        manager.add_reminder("2026-03-16", "Second")
+        manager.add_reminder("2026-03-17", "Third")
+
+        manager.update_reminder("2", message="Updated second")
+        lines = manager.get_file_lines()
+        assert len(lines) == 3
+        assert "First" in lines[0].content
+        assert "Updated second" in lines[1].content
+        assert "Third" in lines[2].content
+
+    def test_update_invalid_line_number(self, manager):
+        manager.add_reminder("2026-03-15", "First")
+
+        with pytest.raises(ValueError, match="out of range"):
+            manager.update_reminder("99", message="New")
+
+    def test_update_no_match(self, manager):
+        manager.add_reminder("2026-03-15", "First")
+
+        with pytest.raises(ValueError, match="No reminder found"):
+            manager.update_reminder("nonexistent", message="New")
+
+    def test_update_with_recurrence(self, manager, tmp_reminders):
+        manager.add_reminder("2026-03-15", "Check-in", time="09:00")
+
+        old_line, new_line = manager.update_reminder(
+            "1", recurrence="weekly"
+        )
+        # March 15 2026 is a Sunday
+        assert "REM Sun" in new_line
+        assert "Check-in" in new_line
+        assert "AT 09:00" in new_line
+
+
+# ---------------------------------------------------------------------------
+# RemindManager: _parse_rem_line
+# ---------------------------------------------------------------------------
+
+class TestParseRemLine:
+    def test_parse_full_line(self, manager):
+        date, time, msg, adv = RemindManager._parse_rem_line(
+            "REM 15 Mar 2026 +3 AT 14:30 MSG Deploy %"
+        )
+        assert date == "15 Mar 2026"
+        assert time == "14:30"
+        assert msg == "Deploy"
+        assert adv == 3
+
+    def test_parse_no_time(self, manager):
+        date, time, msg, adv = RemindManager._parse_rem_line(
+            "REM 15 Mar 2026 MSG Deploy %"
+        )
+        assert date == "15 Mar 2026"
+        assert time is None
+        assert msg == "Deploy"
+        assert adv is None
+
+    def test_parse_daily(self, manager):
+        date, time, msg, adv = RemindManager._parse_rem_line(
+            "REM MSG Check email %"
+        )
+        assert date is None
+        assert time is None
+        assert msg == "Check email"
+        assert adv is None
+
+    def test_parse_weekly(self, manager):
+        date, time, msg, adv = RemindManager._parse_rem_line(
+            "REM Mon AT 09:00 MSG Weekly standup %"
+        )
+        assert date == "Mon"
+        assert time == "09:00"
+        assert msg == "Weekly standup"
+        assert adv is None
+
+
+# ---------------------------------------------------------------------------
 # RemindManager: output parsing
 # ---------------------------------------------------------------------------
 

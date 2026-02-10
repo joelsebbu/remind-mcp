@@ -396,3 +396,140 @@ class RemindManager:
                 return deleted
 
         raise ValueError(f"No reminder found matching: {identifier!r}")
+
+    def update_reminder(
+        self,
+        identifier: str,
+        date: str | None = None,
+        message: str | None = None,
+        time: str | None = None,
+        recurrence: str | None = None,
+        advance_notice: int | None = None,
+    ) -> tuple[str, str]:
+        """Update an existing reminder by line number or search pattern.
+
+        Finds the reminder using the identifier, then replaces it with a new
+        REM line built from the provided fields.  Any field that is ``None``
+        will be kept from the original reminder where possible.
+
+        Args:
+            identifier: Either a line number (e.g. "3") or a search pattern.
+            date: New date string (same formats as add_reminder). If None, the
+                  original date spec is reused verbatim.
+            message: New message text.  If None, the original message is kept.
+            time: New time string.  If None, the original time is kept.
+                  Pass empty string "" to explicitly remove the time.
+            recurrence: New recurrence type (daily/weekly/monthly).
+            advance_notice: New advance-notice days.  Pass 0 to remove.
+
+        Returns:
+            A tuple of (old_line, new_line).
+        """
+        lines = self.reminders_file.read_text().splitlines()
+        target_index: int | None = None
+
+        # Try as line number first
+        try:
+            line_num = int(identifier)
+            if 1 <= line_num <= len(lines):
+                target_index = line_num - 1
+            else:
+                raise ValueError(
+                    f"Line number {line_num} out of range (1-{len(lines)})"
+                )
+        except ValueError as e:
+            if "out of range" in str(e):
+                raise
+
+        # Fall back to pattern search
+        if target_index is None:
+            pattern = identifier.lower()
+            for i, line in enumerate(lines):
+                if pattern in line.lower():
+                    target_index = i
+                    break
+
+        if target_index is None:
+            raise ValueError(f"No reminder found matching: {identifier!r}")
+
+        old_line = lines[target_index]
+
+        # Extract defaults from the existing REM line when new values are not
+        # supplied.
+        orig_date, orig_time, orig_message, orig_advance = self._parse_rem_line(
+            old_line
+        )
+
+        effective_date = date if date is not None else orig_date
+        effective_message = message if message is not None else orig_message
+
+        # For time: None means keep original, "" means remove
+        if time is None:
+            effective_time = orig_time
+        elif time == "":
+            effective_time = None
+        else:
+            effective_time = time
+
+        effective_advance = (
+            advance_notice if advance_notice is not None else orig_advance
+        )
+        # Treat 0 as "remove advance notice"
+        if effective_advance == 0:
+            effective_advance = None
+
+        if effective_date is None:
+            effective_date = "daily"
+
+        new_line = self.build_rem_line(
+            date=effective_date,
+            message=effective_message,
+            time=effective_time,
+            recurrence=recurrence,
+            advance_notice=effective_advance,
+        )
+
+        lines[target_index] = new_line
+        self.reminders_file.write_text("\n".join(lines) + "\n" if lines else "")
+        return old_line, new_line
+
+    @staticmethod
+    def _parse_rem_line(line: str) -> tuple[str | None, str | None, str, int | None]:
+        """Extract components from an existing REM line.
+
+        Returns (date_spec, time_str, message, advance_notice).
+        """
+        # Remove leading "REM " prefix
+        rest = line.strip()
+        if rest.upper().startswith("REM "):
+            rest = rest[4:]
+        elif rest.upper() == "REM":
+            return None, None, "", None
+
+        # Extract message (everything after "MSG ")
+        msg_match = re.search(r"MSG\s+(.*?)(?:\s*%\s*)?$", rest)
+        message = msg_match.group(1).strip() if msg_match else ""
+        before_msg = rest[: msg_match.start()].strip() if msg_match else rest
+
+        # Extract time (AT HH:MM)
+        time_str: str | None = None
+        time_match = re.search(r"AT\s+(\d{1,2}:\d{2})", before_msg)
+        if time_match:
+            time_str = time_match.group(1)
+            before_msg = (
+                before_msg[: time_match.start()] + before_msg[time_match.end() :]
+            ).strip()
+
+        # Extract advance notice (+N)
+        advance: int | None = None
+        adv_match = re.search(r"\+(\d+)", before_msg)
+        if adv_match:
+            advance = int(adv_match.group(1))
+            before_msg = (
+                before_msg[: adv_match.start()] + before_msg[adv_match.end() :]
+            ).strip()
+
+        # Whatever remains is the date spec (could be empty for daily)
+        date_spec: str | None = before_msg if before_msg else None
+
+        return date_spec, time_str, message, advance

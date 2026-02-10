@@ -148,6 +148,67 @@ def delete_reminder(identifier: str) -> str:
 
 
 @mcp.tool()
+def update_reminder(
+    identifier: str,
+    date: str | None = None,
+    message: str | None = None,
+    time: str | None = None,
+    recurrence: str | None = None,
+    advance_notice: int | None = None,
+) -> str:
+    """Update an existing reminder in the reminders file.
+
+    Finds the reminder by line number or search pattern, then replaces it
+    with updated values.  Only the fields you provide will be changed;
+    omitted fields keep their current values.
+
+    Args:
+        identifier: Either a line number (e.g. "3") or a search pattern
+            that matches the reminder text.  If using a pattern, the first
+            matching line will be updated.
+        date: New date.  Supports the same formats as add_reminder.
+        message: New reminder message text.
+        time: New time in 24h or 12h format.  Pass empty string "" to remove
+            the time from the reminder.
+        recurrence: New recurrence type: "daily", "weekly", or "monthly".
+        advance_notice: New advance-notice days.  Pass 0 to remove advance
+            notice.
+
+    Returns:
+        Confirmation showing the old and new reminder lines.
+    """
+    try:
+        manager = _get_manager()
+        old_line, new_line = manager.update_reminder(
+            identifier=identifier,
+            date=date,
+            message=message,
+            time=time,
+            recurrence=recurrence,
+            advance_notice=advance_notice,
+        )
+        return (
+            f"Reminder updated successfully:\n"
+            f"  Old: {old_line}\n"
+            f"  New: {new_line}"
+        )
+    except ValueError as e:
+        manager = _get_manager()
+        file_lines = manager.get_file_lines()
+        if file_lines:
+            lines_display = "\n".join(
+                f"  {fl.line_number}: {fl.content}" for fl in file_lines
+            )
+            return (
+                f"Error: {e}\n\n"
+                f"Available reminders:\n{lines_display}"
+            )
+        return f"Error: {e}"
+    except OSError as e:
+        return f"Error accessing reminders file: {e}"
+
+
+@mcp.tool()
 def trigger_reminder(
     date: str,
     time: str,

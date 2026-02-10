@@ -102,6 +102,25 @@ delete_reminder(identifier="standup")
 delete_reminder(identifier="2")
 ```
 
+### `update_reminder`
+
+Update an existing reminder. Finds the reminder by line number or search pattern, then replaces it with updated values. Only the fields you provide will be changed; omitted fields keep their current values.
+
+**Parameters:**
+- `identifier` (required): Line number (e.g. `"3"`) or text pattern (e.g. `"standup"`)
+- `date` (optional): New date (same formats as `add_reminder`)
+- `message` (optional): New reminder message text
+- `time` (optional): New time in 24h or 12h format. Pass `""` to remove the time.
+- `recurrence` (optional): New recurrence type: `"daily"`, `"weekly"`, `"monthly"`
+- `advance_notice` (optional): New advance-notice days. Pass `0` to remove.
+
+**Examples:**
+```
+update_reminder(identifier="standup", time="10:00")
+update_reminder(identifier="2", message="Updated deploy instructions", date="2026-04-01")
+update_reminder(identifier="1", advance_notice=0, time="")
+```
+
 ### `trigger_reminder`
 
 Set up a reminder with a custom action/webhook. Starts the daemon if needed.
